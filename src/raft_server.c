@@ -313,9 +313,7 @@ int raft_recv_appendentries_response(raft_server_t* me_,
            decrement nextIndex and retry (§5.3) */
         raft_index_t next_idx = raft_node_get_next_idx(node);
         assert(0 < next_idx);
-        /* Stale response -- ignore */
-        if (r->current_idx < match_idx)
-            return 0;
+
         if (r->current_idx < next_idx - 1)
             raft_node_set_next_idx(node, min(r->current_idx + 1, raft_get_current_idx(me_)));
         else
@@ -900,6 +898,10 @@ int raft_send_appendentries(raft_server_t* me_, raft_node_t* node)
     /* figure out if the client needs a snapshot sent */
     if (0 < me->snapshot_last_idx && next_idx < me->snapshot_last_idx)
     {
+        /* reset the match index to before the last snapshot index;
+         * otherwise raft_recv_appendentries_response() will not properly
+         * update the node's state after having applied the snapshot. */
+        raft_node_set_match_idx(node, me->snapshot_last_idx - 1);
         if (me->cb.send_snapshot)
             me->cb.send_snapshot(me_, me->udata, node);
         return RAFT_ERR_NEEDS_SNAPSHOT;
