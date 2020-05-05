@@ -302,8 +302,21 @@ int raft_recv_appendentries_response(raft_server_t* me_,
         me->current_leader = NULL;
         return 0;
     }
-    else if (me->current_term != r->term)
-        return 0;
+    else if (me->current_term != r->term) {
+        /* Disable this check because it prevents to recover arbitrary followers if
+         * log/snapshot compaction was done right before leader crashed.
+         * The new leader will have an incremented term where the existing snapshot
+         * still has the old term. This old term is reported as AE-response
+         * after applying the snapshot by the follower. */
+        if (r->first_idx == RAFT_MAGIC_NUMBER_ALLOW_AE_RESPONSE_WITH_NOT_EXPECTED_TERM) {
+            __log(me_, node, "received term %d instead of expected %d: accepting because snapshot AE",
+                r->term, me->current_term);
+        } else {
+            __log(me_, node, "received term %d instead of expected %d: ignoring",
+                r->term, me->current_term);
+            return 0;
+        }
+    }
 
     raft_index_t match_idx = raft_node_get_match_idx(node);
 

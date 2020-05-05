@@ -42,6 +42,11 @@ typedef enum {
 /** Allow entries to apply while taking a snapshot */
 #define RAFT_SNAPSHOT_NONBLOCKING_APPLY     1
 
+/** If an AE response is received with this magic number in the first_idx field
+ *  the response is accepted even if the term does not match the expected one.
+ *  This is needed to recover nodes that crashed before leader changed. */
+#define RAFT_MAGIC_NUMBER_ALLOW_AE_RESPONSE_WITH_NOT_EXPECTED_TERM  1999999999
+
 typedef enum {
     /**
      * Regular log type.
