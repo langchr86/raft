@@ -403,14 +403,13 @@ int raft_recv_appendentries(
     raft_server_private_t* me = (raft_server_private_t*)me_;
     int e = 0;
 
-    if (0 < ae->n_entries)
-        __log(me_, node, "recvd appendentries t:%d ci:%d lc:%d pli:%d plt:%d #%d",
-              ae->term,
-              raft_get_current_idx(me_),
-              ae->leader_commit,
-              ae->prev_log_idx,
-              ae->prev_log_term,
-              ae->n_entries);
+    __log(me_, node, "recvd appendentries t:%d ci:%d lc:%d pli:%d plt:%d #%d",
+          ae->term,
+          raft_get_current_idx(me_),
+          ae->leader_commit,
+          ae->prev_log_idx,
+          ae->prev_log_term,
+          ae->n_entries);
 
     r->success = 0;
 
@@ -450,7 +449,8 @@ int raft_recv_appendentries(
             if (me->snapshot_last_term != ae->prev_log_term)
             {
                 /* Should never happen; something is seriously wrong! */
-                __log(me_, node, "Snapshot AE prev conflicts with committed entry");
+                __log(me_, node, "Snapshot AE prev_log_term conflicts with committed entry: me=%d != AE=%d",
+                    me->snapshot_last_term, ae->prev_log_term);
                 e = RAFT_ERR_SHUTDOWN;
                 goto out;
             }
@@ -470,7 +470,8 @@ int raft_recv_appendentries(
             if (ae->prev_log_idx <= raft_get_commit_idx(me_))
             {
                 /* Should never happen; something is seriously wrong! */
-                __log(me_, node, "AE prev conflicts with committed entry");
+                __log(me_, node, "Snapshot AE prev_log_term conflicts with committed entry: AE=%d <= me=%d",
+                    ae->prev_log_term, raft_get_commit_idx(me_));
                 e = RAFT_ERR_SHUTDOWN;
                 goto out;
             }
@@ -646,10 +647,17 @@ int raft_recv_requestvote(raft_server_t* me_,
     }
 
 done:
-    __log(me_, node, "node requested vote: %d replying: %s",
-          node,
-          r->vote_granted == 1 ? "granted" :
-          r->vote_granted == 0 ? "not granted" : "unknown");
+    if (node) {
+        __log(me_, node, "node requested vote: %d replying: %s",
+            raft_node_get_id(node),
+            r->vote_granted == 1 ? "granted" :
+            r->vote_granted == 0 ? "not granted" : "unknown");
+    } else {
+        __log(me_, node, "unknown node requested vote: replying: %s",
+            r->vote_granted == 1 ? "granted" :
+            r->vote_granted == 0 ? "not granted" : "unknown");
+    }
+
 
     r->term = raft_get_current_term(me_);
     return e;
@@ -694,7 +702,7 @@ int raft_recv_requestvote_response(raft_server_t* me_,
         return 0;
     }
 
-    __log(me_, node, "node responded to requestvote status:%s ct:%d rt:%d",
+    __log(me_, node, "node responded to requestvote status: %s ct:%d rt:%d",
           r->vote_granted == 1 ? "granted" :
           r->vote_granted == 0 ? "not granted" : "unknown",
           me->current_term,
@@ -715,8 +723,10 @@ int raft_recv_requestvote_response(raft_server_t* me_,
 
         case RAFT_REQUESTVOTE_ERR_UNKNOWN_NODE:
             if (raft_node_is_voting(raft_get_my_node(me_)) &&
-                me->connected == RAFT_NODE_STATUS_DISCONNECTING)
+                me->connected == RAFT_NODE_STATUS_DISCONNECTING) {
+                __log(me_, NULL, "RAFT_REQUESTVOTE_ERR_UNKNOWN_NODE");
                 return RAFT_ERR_SHUTDOWN;
+            }
             break;
 
         default:
@@ -798,7 +808,7 @@ int raft_send_requestvote(raft_server_t* me_, raft_node_t* node)
     assert(node);
     assert(node != me->node);
 
-    __log(me_, node, "sending requestvote to: %d", node);
+    __log(me_, node, "sending requestvote to node: %d", raft_node_get_id(node));
 
     rv.term = me->current_term;
     rv.last_log_idx = raft_get_current_idx(me_);
@@ -911,6 +921,7 @@ int raft_send_appendentries(raft_server_t* me_, raft_node_t* node)
     /* figure out if the client needs a snapshot sent */
     if (0 < me->snapshot_last_idx && next_idx < me->snapshot_last_idx)
     {
+        __log(me_, node, "sending snapshot: next_idx=%d < me->snapshot_last_idx=%d", next_idx, me->snapshot_last_idx);
         /* reset the match index to before the last snapshot index;
          * otherwise raft_recv_appendentries_response() will not properly
          * update the node's state after having applied the snapshot. */
