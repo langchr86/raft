@@ -1,8 +1,5 @@
-.. image:: https://travis-ci.org/willemt/raft.png
-   :target: https://travis-ci.org/willemt/raft
-
-.. image:: https://coveralls.io/repos/willemt/raft/badge.png
-  :target: https://coveralls.io/r/willemt/raft
+.. image:: https://travis-ci.com/langchr86/raft.png
+   :target: https://travis-ci.com/langchr86/raft
 
 C implementation of the Raft consensus protocol, BSD licensed.
 
