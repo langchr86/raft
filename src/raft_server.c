@@ -1005,7 +1005,10 @@ int raft_send_appendentries_all(raft_server_t* me_)
             continue;
 
         e = raft_send_appendentries(me_, me->nodes[i]);
-        if (0 != e)
+        /* process all other nodes even if one of them needs a snapshot */
+        if (e == RAFT_ERR_NEEDS_SNAPSHOT)
+            continue;
+        else if (0 != e)
             return e;
     }
 
