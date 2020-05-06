@@ -221,6 +221,12 @@ raft_term_t raft_get_last_log_term(raft_server_t* me_)
         raft_entry_t* ety = raft_get_entry_from_idx(me_, current_idx);
         if (ety)
             return ety->term;
+        else if (!ety && raft_get_snapshot_last_idx(me_) == current_idx)
+            return raft_get_snapshot_last_term(me_);
+        else {
+            return 0;
+        }
+
     }
     return 0;
 }
