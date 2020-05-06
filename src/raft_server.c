@@ -546,23 +546,40 @@ int raft_already_voted(raft_server_t* me_)
 
 static int __should_grant_vote(raft_server_private_t* me, msg_requestvote_t* vr)
 {
-    if (!raft_node_is_voting(raft_get_my_node((void*)me)))
-        return 0;
+    raft_server_t* me_ = (raft_server_t*)me;
 
-    if (vr->term < raft_get_current_term((void*)me))
+    if (!raft_node_is_voting(raft_get_my_node((void*)me))) {
+        __log(me_, NULL, "not voting");
         return 0;
+    }
+
+    if (vr->term < raft_get_current_term((void*)me)) {
+        __log(me_, NULL, "I have newer term");
+        return 0;
+    }
 
     /* TODO: if voted for is candidate return 1 (if below checks pass) */
-    if (raft_already_voted((void*)me))
+    if (raft_already_voted((void*)me)) {
+        __log(me_, NULL, "already voted");
         return 0;
+    }
 
     /* Below we check if log is more up-to-date... */
 
     raft_index_t current_idx = raft_get_current_idx((void*)me);
 
+    __log(me_, NULL, "__should_grant_vote: current_term=%d current_idx=%d vr->term=%d vr->last_log_term=%d vr->last_log_idx=%d",
+        raft_get_current_term((void*)me),
+        current_idx,
+        vr->term,
+        vr->last_log_term,
+        vr->last_log_idx);
+
     /* Our log is definitely not more up-to-date if it's empty! */
-    if (0 == current_idx)
+    if (0 == current_idx) {
+        __log(me_, NULL, "empty log");
         return 1;
+    }
 
     raft_entry_t* ety = raft_get_entry_from_idx((void*)me, current_idx);
     int ety_term;
@@ -572,15 +589,23 @@ static int __should_grant_vote(raft_server_private_t* me, msg_requestvote_t* vr)
         ety_term = ety->term;
     else if (!ety && me->snapshot_last_idx == current_idx)
         ety_term = me->snapshot_last_term;
-    else
+    else {
+        __log(me_, NULL, "__should_grant_vote: entry failure");
         return 0;
+    }
 
-    if (ety_term < vr->last_log_term)
+    if (ety_term < vr->last_log_term) {
+        __log(me_, NULL, "my last entry has older term: ety_term=%d < vr->last_log_term=%d", ety_term, vr->last_log_term);
         return 1;
+    }
 
-    if (vr->last_log_term == ety_term && current_idx <= vr->last_log_idx)
+    if (vr->last_log_term == ety_term && current_idx <= vr->last_log_idx) {
+        __log(me_, NULL, "same term but lower index: vr->last_log_term=%d == ety_term=%d && current_idx=%d <= vr->last_log_idx=%d",
+              vr->last_log_term, ety_term, current_idx, vr->last_log_idx);
         return 1;
+    }
 
+    __log(me_, NULL, "default: not granted");
     return 0;
 }
 
@@ -599,6 +624,7 @@ int raft_recv_requestvote(raft_server_t* me_,
     if (me->current_leader && me->current_leader != node &&
             (me->timeout_elapsed < me->election_timeout)) {
         r->vote_granted = 0;
+        __log(me_, node, "still have leader");
         goto done;
     }
 
@@ -606,6 +632,7 @@ int raft_recv_requestvote(raft_server_t* me_,
     {
         e = raft_set_current_term(me_, vr->term);
         if (0 != e) {
+            __log(me_, node, "failed to set term");
             r->vote_granted = 0;
             goto done;
         }
@@ -613,17 +640,19 @@ int raft_recv_requestvote(raft_server_t* me_,
         me->current_leader = NULL;
     }
 
-    if (__should_grant_vote(me, vr))
-    {
-        /* It shouldn't be possible for a leader or candidate to grant a vote
-         * Both states would have voted for themselves */
-        assert(!(raft_is_leader(me_) || raft_is_candidate(me_)));
+    if (__should_grant_vote(me, vr)) {
+      /* It shouldn't be possible for a leader or candidate to grant a vote
+       * Both states would have voted for themselves */
+      assert(!(raft_is_leader(me_) || raft_is_candidate(me_)));
 
-        e = raft_vote_for_nodeid(me_, vr->candidate_id);
-        if (0 == e)
-            r->vote_granted = 1;
-        else
-            r->vote_granted = 0;
+      e = raft_vote_for_nodeid(me_, vr->candidate_id);
+      if (0 == e) {
+          __log(me_, node, "give vote");
+          r->vote_granted = 1;
+      } else {
+          __log(me_, node, "not give vote");
+          r->vote_granted = 0;
+      }
 
         /* must be in an election. */
         me->current_leader = NULL;
@@ -639,10 +668,12 @@ int raft_recv_requestvote(raft_server_t* me_,
          * node that it might be removed. */
         if (!node)
         {
+            __log(me_, node, "unknown node");
             r->vote_granted = RAFT_REQUESTVOTE_ERR_UNKNOWN_NODE;
             goto done;
         }
         else
+            __log(me_, node, "should not grant");
             r->vote_granted = 0;
     }
 
